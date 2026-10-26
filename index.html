@@ -246,7 +246,12 @@ function start(){ $("#gate").hidden=true; toast("Loading the map…");
   if(!window.mapboxgl){ toast(`Couldn't load Mapbox. Check your connection. <button onclick="location.reload()">Retry</button>`); return; }
   boot(); }
 const BUILT_IN_TOKEN = "pk.eyJ1Ijoic2h1YmhhbXRhbGJhcjk2IiwiYSI6ImNtdm96c3VjNDB1YXAyem9qb3ZjcHkzbWIifQ.WApxFjaixep6NEVDiSiq-A";
-TOKEN = BUILT_IN_TOKEN || load("bhukkad.mapboxToken");
+function tokenFailed(){
+  store("bhukkad.mapboxToken"); try{ map?.remove(); }catch(e){} map=null;
+  toast(""); $("#gate").hidden=false;
+  $("#gate p").textContent="Mapbox refused the map token. Paste a working public token (it starts with pk.) to open the map.";
+}
+TOKEN = load("bhukkad.mapboxToken") || BUILT_IN_TOKEN;
 if(!TOKEN) $("#gate").hidden=false; else start();
 $("#gateForm").addEventListener("submit",e=>{ e.preventDefault(); const v=$("#tokenIn").value.trim();
   if(!v.startsWith("pk.")){ $("#tokenIn").setCustomValidity("Public tokens start with pk."); $("#tokenIn").reportValidity(); return; }
@@ -308,8 +313,10 @@ function boot(){
     for(const [k,v] of Object.entries({...BASEMAP, lightPreset:light})) { try{ map.setConfigProperty("basemap",k,v);}catch(e){} }
     try{ map.setFog({ range:[1,10], color:"#cfeefd", "high-color":"#7fd0ff", "horizon-blend":0.08, "space-color":"#1d2a6b", "star-intensity":0.4 }); }catch(e){}
   });
-  map.on("error",e=>{ const st=e.error?.status; console.warn(e.error);
-    if(st===401||st===403){ store("bhukkad.mapboxToken"); toast(`Mapbox rejected the map token. Check its URL restrictions in your Mapbox account. <button onclick="location.reload()">Reload</button>`); } });
+  let styleOk=false; map.on("style.load",()=>{ styleOk=true; });
+  map.on("error",e=>{ const st=e.error?.status; console.warn("Mapbox error",st,e.error?.url||"",e.error?.message||e.error);
+    // One refused tile or font is not fatal. Only treat the token as bad if the base style itself can't load.
+    if((st===401||st===403) && !styleOk) tokenFailed(); });
 
   map.on("load", async ()=>{
     toast("Finding Indian food near you…");
@@ -329,7 +336,7 @@ function boot(){
     const [loc, data] = await Promise.all([locate(), loadPlaces().catch(err=>err)]);
     userLoc=loc; introSpin=false; renderMe(); track();
     if(data instanceof Error){
-      if(data.message==="token"){ store("bhukkad.mapboxToken"); toast(`Mapbox rejected that token. <button onclick="location.reload()">Enter another</button>`); }
+      if(data.message==="token"){ toast(`Mapbox refused the place search for this token. Check the token's scopes in your Mapbox account.`); }
       else toast(`Couldn't load places from Mapbox. <button onclick="location.reload()">Retry</button>`);
       swoop(); return;
     }
