@@ -245,7 +245,8 @@ window.addEventListener("error",e=>toast(`Something broke: ${esc(e.message||"unk
 function start(){ $("#gate").hidden=true; toast("Loading the map…");
   if(!window.mapboxgl){ toast(`Couldn't load Mapbox. Check your connection. <button onclick="location.reload()">Retry</button>`); return; }
   boot(); }
-TOKEN = load("bhukkad.mapboxToken");
+const BUILT_IN_TOKEN = "pk.eyJ1Ijoic2h1YmhhbXRhbGJhcjk2IiwiYSI6ImNtdm96c3VjNDB1YXAyem9qb3ZjcHkzbWIifQ.WApxFjaixep6NEVDiSiq-A";
+TOKEN = BUILT_IN_TOKEN || load("bhukkad.mapboxToken");
 if(!TOKEN) $("#gate").hidden=false; else start();
 $("#gateForm").addEventListener("submit",e=>{ e.preventDefault(); const v=$("#tokenIn").value.trim();
   if(!v.startsWith("pk.")){ $("#tokenIn").setCustomValidity("Public tokens start with pk."); $("#tokenIn").reportValidity(); return; }
@@ -308,7 +309,7 @@ function boot(){
     try{ map.setFog({ range:[1,10], color:"#cfeefd", "high-color":"#7fd0ff", "horizon-blend":0.08, "space-color":"#1d2a6b", "star-intensity":0.4 }); }catch(e){}
   });
   map.on("error",e=>{ const st=e.error?.status; console.warn(e.error);
-    if(st===401||st===403){ store("bhukkad.mapboxToken"); toast(`Mapbox rejected that token. <button onclick="location.reload()">Enter another</button>`); } });
+    if(st===401||st===403){ store("bhukkad.mapboxToken"); toast(`Mapbox rejected the map token. Check its URL restrictions in your Mapbox account. <button onclick="location.reload()">Reload</button>`); } });
 
   map.on("load", async ()=>{
     toast("Finding Indian food near you…");
