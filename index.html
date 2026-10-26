@@ -262,6 +262,7 @@ $("#tokenIn").addEventListener("input",e=>e.target.setCustomValidity(""));
 function classify(name, cats){
   const n=name.toLowerCase(), c=(cats||[]).join(" ").toLowerCase();
   if (/food_truck|food truck/.test(c) || /truck|cart\b/.test(n)) return "truck";
+  if (/chaat|pani ?puri|vada pav/.test(n)) return "snacks";
   if (/dosa|idli|udupi|saravana|chettinad|andhra|madras|kerala|tamil|telugu|hyderabad|mylapore|anjappar|paradise|kannada|malabar|chennai|bangalore|bengaluru|south indian/.test(n)) return "south";
   if (/bakery|dessert|sweet|ice_cream|snack/.test(c) || /chaat|sweet|snack|vada|pav|pani|samosa|jalebi|halwai|bakery|chai|mithai|kulfi/.test(n)) return "snacks";
   if (/punjab|tandoor|dhaba|mughal|amritsar|delhi|lucknow|kashmir|rajasthan|himalaya|kebab|kabob|north indian|nepal|everest/.test(n)) return "north";
@@ -279,6 +280,21 @@ async function sb(path, params){
     const err=new Error(r.status===401||r.status===403?"token":String(r.status)); err.detail=`${r.status}${msg?": "+msg:""}`; throw err; }
   return (await r.json()).features||[];
 }
+// Fallback: Mapbox Geocoding v5 POI search, for accounts where the Search Box API is refused.
+const V5_QUERIES = ["indian restaurant","indian food","chaat","dosa","biryani","indian sweets","tandoori","punjabi"];
+const V5_CENTERS = [[-122.03,37.37],[-121.93,37.33],[-121.97,37.53],[-122.08,37.39],[-121.89,37.42]]; // Sunnyvale, San Jose, Fremont, Mountain View, Milpitas
+async function v5(q, center){
+  const u=new URL(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`);
+  for(const [k,v] of Object.entries({types:"poi",proximity:center.join(","),bbox:AREA.join(","),limit:10,language:"en",access_token:TOKEN})) u.searchParams.set(k,v);
+  const r=await fetch(u);
+  if(!r.ok){ let msg=""; try{ msg=(await r.json()).message||""; }catch(e){}
+    const err=new Error(String(r.status)); err.detail=`${r.status}${msg?": "+msg:""} (geocoding)`; throw err; }
+  // reshape into the Search Box feature shape the rest of the page uses
+  return ((await r.json()).features||[]).map(f=>({type:"Feature",geometry:{type:"Point",coordinates:f.center},
+    properties:{name:f.text, mapbox_id:f.id, address:f.properties?.address||"", full_address:f.place_name,
+      poi_category:[f.properties?.category||""], poi_category_ids:(f.properties?.category||"").split(/,\s*/).map(c=>c.replace(/\s+/g,"_"))}}));
+}
+function geocodeV5Jobs(){ const jobs=[]; for(const q of V5_QUERIES) for(const c of V5_CENTERS) jobs.push(v5(q,c)); return Promise.allSettled(jobs); }
 async function loadPlaces(){
   const [w,s,e,n]=AREA, jobs=[];
   for(let i=0;i<3;i++) for(let j=0;j<3;j++){
@@ -288,12 +304,16 @@ async function loadPlaces(){
   const nCat=jobs.length;
   for(const q of TEXT_QUERIES) for(const c of SEARCH_CENTERS)
     jobs.push(sb("forward",{q,proximity:c.join(","),bbox:AREA.join(","),types:"poi",limit:10}));
-  const res=await Promise.allSettled(jobs);
-  if(res.every(r=>r.status==="rejected")) throw res[0].reason;
-  const seen=new Map();
+  let res=await Promise.allSettled(jobs), nFirst=nCat;
+  if(res.every(r=>r.status==="rejected")){
+    console.warn("Search Box refused, falling back to Geocoding v5", res[0].reason?.detail);
+    res=await geocodeV5Jobs(); nFirst=0;              // every result gets the Indian-ness check
+    if(res.every(r=>r.status==="rejected")) throw res[0].reason;
+  }
+  const seen=new Map(), nCatUsed=nFirst;
   res.forEach((r,idx)=>{ if(r.status!=="fulfilled") return;
     for(const f of r.value){ const p=f.properties; if(!p?.name||seen.has(p.mapbox_id)) continue;
-      if(idx>=nCat && !isIndianish(f)) continue;
+      if(idx>=nCatUsed && !isIndianish(f)) continue;
       seen.set(p.mapbox_id,f); } });
   return [...seen.values()].map(f=>{
     const p=f.properties, id=p.mapbox_id, [lon,lat]=f.geometry.coordinates, cat=classify(p.name,p.poi_category_ids);
