@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bhukkad</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&display=swap">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.css">
+<style>
+/* Layout: full-bleed playful map. Floating top bar with filter chips. Bottom sheet on phones, left panel on desktop.
+   Rule for markers: never animate or set transform on the marker root. Mapbox positions markers with transform. */
+:root{
+  --paper:#ffffff;
+  --ink:#1d1a2b;
+  --muted:#6f6a86;
+  --line:#ebe8f2;
+  --saffron:#ffb21e;
+  --chili:#ff3d6e;
+  --c-snacks:#ffb21e;
+  --c-south:#22c07a;
+  --c-north:#ff7a3d;
+  --c-pan:#2fb8e6;
+  --c-truck:#ff5fae;
+  --shadow:0 6px 18px rgba(29,26,43,.18);
+  --display:"Baloo 2","Trebuchet MS",system-ui,sans-serif;
+  --body:"Nunito","Segoe UI",system-ui,sans-serif;
+  --panel-w:400px;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;background:#cfeefd;color:var(--ink);font-family:var(--body);font-size:15px}
+#map{position:fixed;inset:0}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+:focus-visible{outline:3px solid var(--saffron);outline-offset:2px}
+
+/* ---------- top bar ---------- */
+.top{position:fixed;top:0;left:0;right:0;z-index:5;pointer-events:none;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px))}
+.top>*{pointer-events:auto}
+.row{display:flex;align-items:center;gap:10px}
+.logo{margin:0;background:var(--paper);border-radius:999px;box-shadow:var(--shadow);padding:4px 16px 2px;
+  font-family:var(--display);font-weight:800;font-size:26px;line-height:1.15;letter-spacing:-.3px}
+.logo b{color:var(--saffron)}
+.spacer{flex:1}
+.round{width:46px;height:46px;border-radius:50%;background:var(--paper);box-shadow:var(--shadow);display:grid;place-items:center;transition:transform .15s}
+.round:active{transform:scale(.92)}
+.round svg{width:22px;height:22px}
+.chips{display:flex;gap:8px;margin-top:10px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 8px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:inline-flex;align-items:center;gap:6px;background:var(--paper);box-shadow:0 3px 10px rgba(29,26,43,.14);
+  border-radius:999px;padding:7px 14px 7px 9px;font-weight:800;font-size:14px;white-space:nowrap;transition:transform .15s,background .15s}
+.chip .e{font-size:18px;line-height:1}
+.chip .n{color:var(--muted);font-weight:700;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--c);color:#fff}
+.chip[aria-pressed="true"] .n{color:rgba(255,255,255,.85)}
+.chip:active{transform:scale(.95)}
+
+/* ---------- layers menu ---------- */
+.menu{position:fixed;z-index:7;right:max(14px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 66px);
+  background:var(--paper);border-radius:20px;box-shadow:0 12px 34px rgba(29,26,43,.25);padding:14px;width:250px}
+.menu h3{margin:0 0 8px;font-family:var(--display);font-size:16px}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#f4f2f8;border-radius:12px;padding:4px;margin-bottom:12px}
+.seg button{border-radius:9px;padding:6px 0;font-size:12px;font-weight:800;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--paper);color:var(--ink);box-shadow:0 2px 6px rgba(0,0,0,.1)}
+.toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:8px 2px;font-weight:700}
+.toggle i{width:40px;height:24px;border-radius:999px;background:#ddd9e6;position:relative;transition:background .2s}
+.toggle i::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle[aria-pressed="true"] i{background:var(--chili)}
+.toggle[aria-pressed="true"] i::after{left:19px}
+
+/* ---------- markers (root gets no transform; everything animates inside .in) ---------- */
+.pin{--c:var(--c-pan);width:44px;height:58px;cursor:pointer}
+.pin .in{position:relative;width:100%;height:100%;display:grid;justify-items:center;align-content:start;transition:transform .2s cubic-bezier(.3,1.6,.5,1);transform-origin:50% 100%}
+.pin .face{width:42px;height:42px;border-radius:50%;background:var(--paper);border:3px solid var(--c);display:grid;place-items:center;
+  font-size:22px;line-height:1;box-shadow:0 4px 0 rgba(29,26,43,.12),0 6px 14px rgba(29,26,43,.25)}
+.pin .badge{margin-top:-9px;background:var(--c);color:#fff;font-family:var(--display);font-weight:800;font-size:12px;line-height:1;
+  padding:4px 7px 3px;border-radius:999px;border:2px solid #fff;font-variant-numeric:tabular-nums}
+.pin .fire{position:absolute;top:-6px;right:-4px;font-size:15px}
+.pin.hot .face{box-shadow:0 0 0 5px rgba(255,61,110,.28),0 4px 0 rgba(29,26,43,.12),0 6px 14px rgba(29,26,43,.25)}
+.pin .name{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:2px;background:var(--ink);color:#fff;font-size:10px;font-weight:800;
+  padding:3px 9px;border-radius:999px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;box-shadow:var(--shadow);display:none}
+.pin:hover .in{transform:scale(1.12)}
+.pin.sel .in{transform:scale(1.3)}
+.pin.sel .name{display:block}
+.pin.sel{z-index:5}
+.clu{width:64px;height:64px;cursor:pointer}
+.clu .in{width:100%;height:100%;border-radius:50%;background:var(--paper);border:3px solid var(--saffron);display:grid;place-items:center;align-content:center;
+  box-shadow:0 4px 0 rgba(29,26,43,.12),0 8px 18px rgba(29,26,43,.25);transition:transform .2s;line-height:1}
+.clu .in .em{font-size:17px;letter-spacing:-3px}
+.clu .in b{font-family:var(--display);font-size:16px;margin-top:2px}
+.clu:hover .in{transform:scale(1.08)}
+.me{width:60px;height:60px;pointer-events:none}
+.me .in{position:relative;width:100%;height:100%;display:grid;place-items:center}
+.me .ring{position:absolute;inset:3px;border-radius:50%;background:rgba(255,178,30,.35);border:2px solid rgba(255,178,30,.8);animation:radar 2.4s ease-out infinite}
+.me .ring.r2{animation-delay:1.2s}
+.me .av{position:relative;width:54px;height:54px;border-radius:50%;background:linear-gradient(145deg,#ffd45c,#ff9a1e);border:4px solid #fff;
+  display:grid;place-items:center;font-size:30px;line-height:1;box-shadow:0 6px 0 rgba(29,26,43,.15),0 10px 22px rgba(29,26,43,.35)}
+.me .tag{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;background:var(--ink);color:#fff;font-weight:800;font-size:12px;padding:3px 10px;border-radius:999px;white-space:nowrap;box-shadow:var(--shadow)}
+.me.approx .av{background:linear-gradient(145deg,#d9d6e3,#a9a5bb);filter:saturate(.4)}
+.me.approx .ring{background:rgba(150,145,170,.25);border-color:rgba(150,145,170,.6)}
+@keyframes radar{0%{transform:scale(.9);opacity:1}100%{transform:scale(3);opacity:0}}
+
+/* ---------- sheet / panel ---------- */
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--paper);border-radius:26px 26px 0 0;box-shadow:0 -8px 30px rgba(29,26,43,.18);
+  padding-bottom:calc(env(safe-area-inset-bottom,0px) + 10px);transition:transform .35s cubic-bezier(.3,1.2,.5,1);display:flex;flex-direction:column}
+.sheet.min{transform:translateY(calc(100% - 60px - env(safe-area-inset-bottom,0px)))}
+.handle{display:block;width:100%;padding:10px 0 0;flex:none}
+.handle::before{content:"";display:block;margin:0 auto;width:42px;height:5px;border-radius:9px;background:#dcd8e6}
+.shead{display:flex;align-items:baseline;gap:10px;padding:6px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));flex:none}
+.shead h2{margin:0;font-family:var(--display);font-size:20px;font-weight:800}
+.shead span{color:var(--muted);font-size:13px;font-weight:700}
+.cards{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;
+  padding:2px max(16px,env(safe-area-inset-right,0px)) 6px max(16px,env(safe-area-inset-left,0px));scroll-padding-inline:16px}
+.cards::-webkit-scrollbar{display:none}
+.card{--c:var(--c-pan);flex:none;width:min(280px,78vw);scroll-snap-align:start;border-radius:18px;background:#faf9fc;border:2px solid var(--line);
+  overflow:hidden;cursor:pointer;transition:border-color .2s;display:grid;grid-template-columns:auto 1fr;gap:0 12px;padding:12px}
+.card.sel{border-color:var(--c);background:#fff}
+.card .em{grid-row:span 3;width:54px;height:54px;border-radius:16px;background:var(--c);display:grid;place-items:center;font-size:28px;line-height:1;position:relative}
+.card .em b{position:absolute;right:-6px;bottom:-6px;background:#fff;color:var(--ink);border:2px solid var(--c);border-radius:999px;font-family:var(--display);font-size:12px;padding:2px 6px 1px;font-variant-numeric:tabular-nums}
+.card h3{margin:0;font-family:var(--display);font-size:16px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.meta{font-size:13px;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.meta b{color:var(--c)}
+.known{font-size:13px;margin-top:2px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.known em{font-style:normal;color:var(--muted)}
+.hotline{color:var(--chili);font-weight:800}
+.actions{grid-column:1/-1;display:flex;gap:8px;margin-top:10px}
+.actions a{flex:1;text-align:center;text-decoration:none;border-radius:12px;padding:7px 0;font-size:13px;font-weight:800;background:#efedf4;color:var(--ink)}
+.actions a:first-child{background:var(--ink);color:#fff}
+.empty{color:var(--muted);font-weight:700;padding:6px 0 14px}
+.note{font-size:11px;color:var(--muted);padding:6px max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px));margin:0;flex:none}
+
+/* ---------- toast + token gate ---------- */
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 118px);z-index:6;background:var(--ink);color:#fff;
+  border-radius:999px;padding:8px 16px;font-size:13px;font-weight:700;max-width:calc(100% - 32px);text-align:center;box-shadow:var(--shadow)}
+.toast button{color:var(--saffron);font-weight:800;margin-left:6px}
+.gate{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:radial-gradient(circle at 30% 20%,#ffe1a1,transparent 50%),radial-gradient(circle at 80% 80%,#bfeafc,transparent 50%),#fff4dd}
+.gate form{background:#fff;border-radius:26px;box-shadow:0 20px 50px rgba(29,26,43,.2);padding:24px;max-width:420px;width:100%;display:grid;gap:12px}
+.gate h1{margin:0;font-family:var(--display);font-size:34px;line-height:1}
+.gate h1 b{color:var(--saffron)}
+.gate p{margin:0;color:var(--muted);font-weight:600;line-height:1.5}
+.gate input{font:inherit;font-size:14px;border:2px solid var(--line);border-radius:12px;padding:10px 12px;width:100%}
+.gate button{background:var(--ink);color:#fff;border-radius:12px;padding:11px;font-weight:800}
+.gate a{color:var(--ink);font-weight:800}
+.mapboxgl-ctrl-bottom-left,.mapboxgl-ctrl-bottom-right{bottom:230px}
+
+@media (prefers-reduced-motion:reduce){.me .ring{animation:none;opacity:.5;transform:scale(1.5)}.pin .in,.clu .in,.sheet{transition:none}}
+@media (min-width:900px){
+  .sheet{left:16px;right:auto;width:var(--panel-w);top:calc(env(safe-area-inset-top,0px) + 132px);bottom:16px;border-radius:26px;padding-bottom:10px}
+  .sheet.min{transform:none}
+  .handle{display:none}
+  .shead{padding-top:16px}
+  .cards{flex-direction:column;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y proximity;padding-bottom:10px}
+  .card{width:100%}
+  .mapboxgl-ctrl-bottom-left{bottom:0;left:calc(var(--panel-w) + 24px)}
+  .mapboxgl-ctrl-bottom-right{bottom:0}
+}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Map of Indian food places"></div>
+
+<header class="top">
+  <div class="row">
+    <h1 class="logo">bhukkad<b>.</b></h1>
+    <div class="spacer"></div>
+    <button class="round" id="nearBtn" aria-label="Fly to my location" title="Fly to my location">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8z"/></svg></button>
+    <button class="round" id="layersBtn" aria-label="Map layers" aria-expanded="false" title="Layers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></button>
+  </div>
+  <nav class="chips" id="chips" aria-label="Quick filters"></nav>
+</header>
+
+<div class="menu" id="menu" hidden>
+  <h3>Time of day</h3>
+  <div class="seg" id="light">
+    <button data-v="dawn">Dawn</button><button data-v="day">Day</button><button data-v="dusk">Dusk</button><button data-v="night">Night</button>
+  </div>
+  <button class="toggle" id="buzzT" aria-pressed="false">Buzz heatmap <i></i></button>
+  <button class="toggle" id="threeD" aria-pressed="true">3D buildings &amp; trees <i></i></button>
+  <button class="toggle" id="spinT" aria-pressed="false">Slow orbit <i></i></button>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<section class="sheet" id="sheet" aria-label="Places near you">
+  <button class="handle" id="handle" aria-label="Collapse or expand list"></button>
+  <div class="shead"><h2 id="sheetTitle">Closest to you</h2><span id="count"></span></div>
+  <div class="cards" id="cards"></div>
+  <p class="note">Places from Mapbox. Scores, dishes and buzz are sample values until the ratings engine is live.</p>
+</section>
+
+<div class="gate" id="gate" hidden>
+  <form id="gateForm">
+    <h1>bhukkad<b>.</b></h1>
+    <p>Paste your Mapbox public token to load the map. It starts with <b>pk.</b> and stays in this browser only.</p>
+    <input id="tokenIn" placeholder="pk.eyJ1Ijo…" autocomplete="off" spellcheck="false" required>
+    <button type="submit">Open the map</button>
+    <p>No token yet? Create a free account at <a href="https://account.mapbox.com/access-tokens/" target="_blank" rel="noopener">account.mapbox.com</a> and copy the default public token.</p>
+  </form>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.14.0/mapbox-gl.js"></script>
+<script>
+/* ================= config ================= */
+const CATS = {
+  all:    {label:"All",            emoji:"🍽️", color:"var(--ink)",      hex:"#1d1a2b"},
+  snacks: {label:"Snacks & Chaat", emoji:"🥟", color:"var(--c-snacks)", hex:"#ffb21e", dishes:["Pani puri","Samosa chaat","Vada pav","Pav bhaji","Dahi puri"]},
+  south:  {label:"South Indian",   emoji:"🍛", color:"var(--c-south)",  hex:"#22c07a", dishes:["Masala dosa","Idli sambar","Medu vada","Hyderabadi biryani","Filter coffee"]},
+  north:  {label:"North Indian",   emoji:"🫓", color:"var(--c-north)",  hex:"#ff7a3d", dishes:["Butter chicken","Chole bhature","Dal makhani","Garlic naan","Paneer tikka"]},
+  pan:    {label:"Pan-Indian",     emoji:"🥘", color:"var(--c-pan)",    hex:"#2fb8e6", dishes:["Thali","Biryani","Paneer 65","Gobi manchurian","Mango lassi"]},
+  truck:  {label:"Food trucks",    emoji:"🚚", color:"var(--c-truck)",  hex:"#ff5fae", dishes:["Kathi roll","Frankie","Tikka taco","Masala fries"]}
+};
+const DEFAULT_CENTER = [-121.9886, 37.3541];            // Santa Clara
+const AREA = [-122.12, 37.24, -121.84, 37.58];          // Mountain View → San Jose → Fremont
+const TEXT_QUERIES = ["chaat","dosa","biryani","indian sweets","punjabi dhaba","indian food truck"];
+const SEARCH_CENTERS = [[-122.03,37.37],[-121.93,37.33]];
+const BASEMAP = { colorLand:"#eef3df", colorWater:"#56c6f4", colorGreenspace:"#9fe07f", colorMotorways:"#ffcf3a",
+  colorTrunks:"#ffe27d", colorRoads:"#ffffff", colorCommercial:"#ffe3ec", colorEducation:"#e3dcff", colorMedical:"#ffd9d9", colorIndustrial:"#e6e2d6",
+  showPointOfInterestLabels:false, showTransitLabels:false, showPedestrianRoads:false, show3dObjects:true };
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const desktop = () => innerWidth>=900;
+
+/* ================= state ================= */
+let map, TOKEN, places=[], filter="all", userLoc=null, selectedId=null, programmatic=false, spinning=false, meMarker=null, watchId=null;
+const markers = new Map();
+const $ = s => document.querySelector(s);
+const fc = feats => ({type:"FeatureCollection",features:feats});
+const toast = html => { const t=$("#toast"); t.hidden=!html; if(html) t.innerHTML=html; };
+function store(k,v){ try{ v===undefined ? localStorage.removeItem(k) : localStorage.setItem(k,v);}catch(e){} }
+function load(k){ try{ return localStorage.getItem(k);}catch(e){ return null; } }
+function hash(s){ let h=2166136261; for(const ch of s){ h^=ch.charCodeAt(0); h=Math.imul(h,16777619);} return (h>>>0)/4294967295; }
+function km(a,b){ const R=6371,r=Math.PI/180,dLat=(b[1]-a[1])*r,dLon=(b[0]-a[0])*r;
+  const x=Math.sin(dLat/2)**2+Math.cos(a[1]*r)*Math.cos(b[1]*r)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
+const origin = () => userLoc || DEFAULT_CENTER;
+const fmtMi = k => { const mi=k*0.621; return mi<0.1?"right here": mi<10? mi.toFixed(1)+" mi" : Math.round(mi)+" mi"; };
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const lightForHour = h => h<6||h>=20 ? "night" : h<8 ? "dawn" : h>=17 ? "dusk" : "day";
+// Pixel offset so the focused point lands in the free part of the screen (right of the panel on desktop, above the sheet on phones)
+const focusOffset = () => desktop() ? [208, 20] : [0,-100];
+
+window.addEventListener("error",e=>toast(`Something broke: ${esc(e.message||"unknown error")} <button onclick="location.reload()">Reload</button>`));
+
+/* ================= token gate ================= */
+function start(){ $("#gate").hidden=true; toast("Loading the map…");
+  if(!window.mapboxgl){ toast(`Couldn't load Mapbox. Check your connection. <button onclick="location.reload()">Retry</button>`); return; }
+  boot(); }
+TOKEN = load("bhukkad.mapboxToken");
+if(!TOKEN) $("#gate").hidden=false; else start();
+$("#gateForm").addEventListener("submit",e=>{ e.preventDefault(); const v=$("#tokenIn").value.trim();
+  if(!v.startsWith("pk.")){ $("#tokenIn").setCustomValidity("Public tokens start with pk."); $("#tokenIn").reportValidity(); return; }
+  TOKEN=v; store("bhukkad.mapboxToken",v); start(); });
+$("#tokenIn").addEventListener("input",e=>e.target.setCustomValidity(""));
+
+/* ================= data ================= */
+function classify(name, cats){
+  const n=name.toLowerCase(), c=(cats||[]).join(" ").toLowerCase();
+  if (/food_truck|food truck/.test(c) || /truck|cart\b/.test(n)) return "truck";
+  if (/dosa|idli|udupi|saravana|chettinad|andhra|madras|kerala|tamil|telugu|hyderabad|mylapore|anjappar|paradise|kannada|malabar|chennai|bangalore|bengaluru|south indian/.test(n)) return "south";
+  if (/bakery|dessert|sweet|ice_cream|snack/.test(c) || /chaat|sweet|snack|vada|pav|pani|samosa|jalebi|halwai|bakery|chai|mithai|kulfi/.test(n)) return "snacks";
+  if (/punjab|tandoor|dhaba|mughal|amritsar|delhi|lucknow|kashmir|rajasthan|himalaya|kebab|kabob|north indian|nepal|everest/.test(n)) return "north";
+  return "pan";
+}
+function isIndianish(f){
+  const p=f.properties, ids=(p.poi_category_ids||[]).join(" "), names=(p.poi_category||[]).join(" ").toLowerCase();
+  return /indian/.test(ids+" "+names) || /chaat|dosa|biryani|tandoor|punjab|udupi|dhaba|masala|desi|paratha|idli|samosa|mithai|india/i.test(p.name||"");
+}
+async function sb(path, params){
+  const u=new URL("https://api.mapbox.com/search/searchbox/v1/"+path);
+  for(const [k,v] of Object.entries({...params, access_token:TOKEN, language:"en"})) u.searchParams.set(k,v);
+  const r=await fetch(u); if(r.status===401||r.status===403) throw new Error("token"); if(!r.ok) throw new Error(r.status);
+  return (await r.json()).features||[];
+}
+async function loadPlaces(){
+  const [w,s,e,n]=AREA, jobs=[];
+  for(let i=0;i<3;i++) for(let j=0;j<3;j++){
+    const bbox=[w+(e-w)*i/3, s+(n-s)*j/3, w+(e-w)*(i+1)/3, s+(n-s)*(j+1)/3];
+    jobs.push(sb("category/indian_restaurant",{bbox:bbox.join(","),limit:25}));
+  }
+  const nCat=jobs.length;
+  for(const q of TEXT_QUERIES) for(const c of SEARCH_CENTERS)
+    jobs.push(sb("forward",{q,proximity:c.join(","),bbox:AREA.join(","),types:"poi",limit:10}));
+  const res=await Promise.allSettled(jobs);
+  if(res.every(r=>r.status==="rejected")) throw res[0].reason;
+  const seen=new Map();
+  res.forEach((r,idx)=>{ if(r.status!=="fulfilled") return;
+    for(const f of r.value){ const p=f.properties; if(!p?.name||seen.has(p.mapbox_id)) continue;
+      if(idx>=nCat && !isIndianish(f)) continue;
+      seen.set(p.mapbox_id,f); } });
+  return [...seen.values()].map(f=>{
+    const p=f.properties, id=p.mapbox_id, [lon,lat]=f.geometry.coordinates, cat=classify(p.name,p.poi_category_ids);
+    const h=hash(id), h2=hash(id+"buzz"), dishes=CATS[cat].dishes;
+    return {id,name:p.name,lon,lat,cat,addr:p.address||p.full_address||"",
+      score:(6.9+h*2.7).toFixed(1), buzz:h2, hot:h2>0.85, dish:dishes[Math.floor(hash(id+"d")*dishes.length)]};
+  });
+}
+
+/* ================= map ================= */
+function boot(){
+  mapboxgl.accessToken = TOKEN;
+  const light = lightForHour(new Date().getHours());
+  map = new mapboxgl.Map({ container:"map", style:"mapbox://styles/mapbox/standard", projection:"globe",
+    center:[-110,33], zoom:1.6, attributionControl:true, logoPosition:"bottom-right" });
+  setLightButtons(light);
+
+  map.on("style.load",()=>{
+    for(const [k,v] of Object.entries({...BASEMAP, lightPreset:light})) { try{ map.setConfigProperty("basemap",k,v);}catch(e){} }
+    try{ map.setFog({ range:[1,10], color:"#cfeefd", "high-color":"#7fd0ff", "horizon-blend":0.08, "space-color":"#1d2a6b", "star-intensity":0.4 }); }catch(e){}
+  });
+  map.on("error",e=>{ const st=e.error?.status; console.warn(e.error);
+    if(st===401||st===403){ store("bhukkad.mapboxToken"); toast(`Mapbox rejected that token. <button onclick="location.reload()">Enter another</button>`); } });
+
+  map.on("load", async ()=>{
+    toast("Finding Indian food near you…");
+    let spinStart=performance.now(), introSpin=!reduceMotion;
+    (function turn(){ if(!introSpin) return; map.setCenter([-110+(performance.now()-spinStart)/60,33]); requestAnimationFrame(turn); })();
+
+    map.addSource("places",{type:"geojson",data:fc([]),cluster:true,clusterRadius:64,clusterMaxZoom:15,
+      clusterProperties:Object.fromEntries(["snacks","south","north","pan","truck"].map(k=>[k,["+",["case",["==",["get","cat"],k],1,0]]]))});
+    map.addSource("buzz",{type:"geojson",data:fc([])});
+    map.addSource("link",{type:"geojson",data:fc([])});
+    map.addLayer({id:"buzz-heat",type:"heatmap",source:"buzz",layout:{visibility:"none"},slot:"middle",paint:{
+      "heatmap-weight":["get","w"],"heatmap-intensity":1.4,"heatmap-radius":["interpolate",["linear"],["zoom"],9,30,15,90],"heatmap-opacity":0.75,
+      "heatmap-color":["interpolate",["linear"],["heatmap-density"],0,"rgba(0,0,0,0)",0.15,"rgba(70,170,255,.55)",0.35,"#43e0a6",0.55,"#ffe14d",0.75,"#ff9a3d",1,"#ff3d6e"]}});
+    map.addLayer({id:"link-line",type:"line",source:"link",slot:"top",layout:{"line-cap":"round"},paint:{"line-color":"#ff3d6e","line-width":4,"line-dasharray":[0.6,1.6],"line-opacity":0.9}});
+    map.addLayer({id:"places-anchor",type:"circle",source:"places",slot:"top",paint:{"circle-radius":0,"circle-opacity":0}});
+
+    const [loc, data] = await Promise.all([locate(), loadPlaces().catch(err=>err)]);
+    userLoc=loc; introSpin=false; renderMe(); track();
+    if(data instanceof Error){
+      if(data.message==="token"){ store("bhukkad.mapboxToken"); toast(`Mapbox rejected that token. <button onclick="location.reload()">Enter another</button>`); }
+      else toast(`Couldn't load places from Mapbox. <button onclick="location.reload()">Retry</button>`);
+      swoop(); return;
+    }
+    places=data;
+    toast(loc ? "" : `Location is off, so distances are from Santa Clara. <button onclick="toast('')">OK</button>`);
+    renderAll(); swoop();
+    map.once("moveend",()=>{ const first=visible()[0]; if(first) select(first.id); });
+  });
+  map.on("render",()=>{ if(map.getSource("places") && map.isSourceLoaded("places")) syncMarkers(); });
+  map.on("dragstart",stopSpin);
+  if(!reduceMotion) setInterval(()=>{ if(!map.getLayer("buzz-heat")||map.getLayoutProperty("buzz-heat","visibility")!=="visible") return;
+    map.setPaintProperty("buzz-heat","heatmap-intensity",1.25+Math.sin(performance.now()/1000*1.8)*0.35); },90);
+}
+function swoop(){ map.flyTo({center:origin(),offset:focusOffset(),zoom:14.2,pitch:58,bearing:-20,duration:reduceMotion?0:6000,curve:1.9,essential:true}); }
+
+/* ================= markers ================= */
+function pinEl(p){
+  const el=document.createElement("div"); el.className="pin"+(p.hot?" hot":"")+(p.id===selectedId?" sel":"");
+  el.style.setProperty("--c",CATS[p.cat].hex); el.setAttribute("role","button"); el.tabIndex=0; el.setAttribute("aria-label",`${p.name}, score ${p.score}`);
+  el.innerHTML=`<div class="in"><div class="face">${CATS[p.cat].emoji}</div><div class="badge">${p.score}</div>${p.hot?'<span class="fire">🔥</span>':""}<div class="name">${esc(p.name)}</div></div>`;
+  const go=e=>{ e.stopPropagation(); select(p.id,{fly:true,scroll:true}); };
+  el.addEventListener("click",go); el.addEventListener("keydown",e=>{ if(e.key==="Enter") go(e); });
+  return el;
+}
+function clusterEl(props, coords, clusterId){
+  const el=document.createElement("div"); el.className="clu";
+  const top=["snacks","south","north","pan","truck"].filter(k=>props[k]>0).sort((a,b)=>props[b]-props[a]).slice(0,3);
+  el.innerHTML=`<div class="in"><span class="em">${top.map(k=>CATS[k].emoji).join("")}</span><b>${props.point_count}</b></div>`;
+  el.setAttribute("role","button"); el.tabIndex=0; el.setAttribute("aria-label",`${props.point_count} places, zoom in`);
+  el.addEventListener("click",e=>{ e.stopPropagation(); stopSpin();
+    const go=z=>map.easeTo({center:coords,zoom:Math.min((z??map.getZoom()+2)+0.3,16.5),duration:reduceMotion?0:900});
+    const r=map.getSource("places").getClusterExpansionZoom(clusterId,(err,z)=>{ if(!err) go(z); }); if(r&&r.then) r.then(go).catch(()=>go()); });
+  return el;
+}
+function syncMarkers(){
+  const keep=new Set();
+  for(const f of map.querySourceFeatures("places")){
+    const pr=f.properties, coords=f.geometry.coordinates, key=pr.cluster ? "c"+pr.cluster_id : pr.id;
+    if(keep.has(key)) continue; keep.add(key);
+    if(markers.has(key)) continue;
+    const place = pr.cluster ? null : places.find(p=>p.id===pr.id); if(!pr.cluster && !place) continue;
+    const el = pr.cluster ? clusterEl(pr,coords,pr.cluster_id) : pinEl(place);
+    markers.set(key,new mapboxgl.Marker({element:el,anchor:"bottom"}).setLngLat(coords).addTo(map));
+  }
+  for(const [k,m] of markers) if(!keep.has(k)){ m.remove(); markers.delete(k); }
+}
+function resetMarkers(){ for(const m of markers.values()) m.remove(); markers.clear(); }
+function renderMe(){
+  if(!map) return;
+  if(!meMarker){
+    const el=document.createElement("div"); el.className="me";
+    el.innerHTML=`<div class="in"><span class="ring"></span><span class="ring r2"></span><div class="av">😋</div><div class="tag"></div></div>`;
+    meMarker=new mapboxgl.Marker({element:el,anchor:"center"}).setLngLat(origin()).addTo(map);
+  }
+  const el=meMarker.getElement(); el.classList.toggle("approx",!userLoc);
+  el.querySelector(".tag").textContent = userLoc ? "You" : "Santa Clara · location off";
+  meMarker.setLngLat(origin()); drawLink();
+}
+function drawLink(){
+  const src=map?.getSource("link"); if(!src) return;
+  const p=places.find(x=>x.id===selectedId);
+  src.setData(fc(p?[{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:[origin(),[p.lon,p.lat]]}}]:[]));
+}
+
+/* ================= list ================= */
+function visible(){ return places.filter(p=>filter==="all"||p.cat===filter).map(p=>({...p,d:km(origin(),[p.lon,p.lat])})).sort((a,b)=>a.d-b.d); }
+function renderChips(){
+  const counts={all:places.length}; for(const p of places) counts[p.cat]=(counts[p.cat]||0)+1;
+  $("#chips").innerHTML=Object.entries(CATS).map(([k,v])=>`<button class="chip" style="--c:${v.color}" data-k="${k}" aria-pressed="${k===filter}"><span class="e">${v.emoji}</span>${v.label}<span class="n">${counts[k]||0}</span></button>`).join("");
+}
+function renderCards(){
+  const all=visible(), list=all.slice(0,40);
+  $("#sheetTitle").textContent = filter==="all" ? "Closest to you" : CATS[filter].label+" near you";
+  $("#count").textContent = all.length ? `${all.length} places` : "";
+  if(!list.length){ $("#cards").innerHTML=`<div class="empty">${filter==="all"?"No places found in this area yet.":"No "+CATS[filter].label.toLowerCase()+" places here yet."}</div>`; return; }
+  $("#cards").innerHTML=list.map(p=>`<article class="card${p.id===selectedId?" sel":""}" tabindex="0" data-id="${p.id}" style="--c:${CATS[p.cat].hex}">
+    <div class="em">${CATS[p.cat].emoji}<b>${p.score}</b></div>
+    <h3 title="${esc(p.name)}">${esc(p.name)}</h3>
+    <div class="meta"><b>${CATS[p.cat].label}</b> · ${fmtMi(p.d)} · ${esc(p.addr||"address not listed")}</div>
+    <div class="known"><em>Known for</em> ${p.dish}${p.hot?' · <span class="hotline">🔥 Buzzing</span>':""}</div>
+    <div class="actions"><a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">Directions</a>
+      <a href="https://www.google.com/search?q=${encodeURIComponent(p.name+" "+p.addr+" menu")}" target="_blank" rel="noopener">Menu</a></div>
+  </article>`).join("");
+  observeCards();
+}
+function renderMap(){
+  const v=visible();
+  map.getSource("places")?.setData(fc(v.map(p=>({type:"Feature",properties:{id:p.id,cat:p.cat},geometry:{type:"Point",coordinates:[p.lon,p.lat]}}))));
+  map.getSource("buzz")?.setData(fc(v.map(p=>({type:"Feature",properties:{w:p.buzz},geometry:{type:"Point",coordinates:[p.lon,p.lat]}}))));
+  resetMarkers();
+}
+function renderAll(){ renderChips(); renderCards(); renderMap(); }
+
+/* ================= selection ================= */
+function select(id,{fly=false,scroll=false}={}){
+  selectedId=id; const p=places.find(x=>x.id===id); if(!p) return; stopSpin();
+  for(const [k,m] of markers) m.getElement().classList.toggle("sel",k===id);
+  document.querySelectorAll(".card").forEach(c=>c.classList.toggle("sel",c.dataset.id===id));
+  drawLink();
+  if(fly) map.flyTo({center:[p.lon,p.lat],zoom:Math.max(map.getZoom(),15.6),pitch:58,offset:focusOffset(),duration:reduceMotion?0:1400,essential:true});
+  if(scroll){ $("#sheet").classList.remove("min"); const card=document.querySelector(`.card[data-id="${id}"]`);
+    if(card){ programmatic=true; card.scrollIntoView({behavior:reduceMotion?"auto":"smooth",inline:"start",block:"nearest"}); setTimeout(()=>programmatic=false,800);} }
+}
+let io;
+function observeCards(){
+  io?.disconnect();
+  if(desktop()) return;               // on desktop the list scrolls freely; clicking a card selects it
+  io=new IntersectionObserver(entries=>{
+    if(programmatic) return;
+    const best=entries.find(e=>e.isIntersecting&&e.intersectionRatio>0.9);
+    if(best && best.target.dataset.id!==selectedId) select(best.target.dataset.id,{fly:true});
+  },{root:$("#cards"),threshold:[0.9]});
+  document.querySelectorAll(".card").forEach(c=>io.observe(c));
+}
+$("#cards").addEventListener("click",e=>{ if(e.target.closest("a")) return; const c=e.target.closest(".card"); if(c) select(c.dataset.id,{fly:true}); });
+$("#cards").addEventListener("keydown",e=>{ if(e.key==="Enter"){ const c=e.target.closest(".card"); if(c) select(c.dataset.id,{fly:true}); }});
+$("#chips").addEventListener("click",e=>{ const b=e.target.closest(".chip"); if(!b||!map) return; filter=b.dataset.k; selectedId=null; renderAll();
+  $("#cards").scrollTo({left:0,top:0}); const first=visible()[0]; if(first) select(first.id,{fly:true}); });
+$("#handle").addEventListener("click",()=>$("#sheet").classList.toggle("min"));
+
+/* ================= layers ================= */
+$("#layersBtn").addEventListener("click",e=>{ e.stopPropagation(); const m=$("#menu"); m.hidden=!m.hidden; $("#layersBtn").setAttribute("aria-expanded",!m.hidden); });
+document.addEventListener("click",e=>{ if(!e.target.closest("#menu")){ $("#menu").hidden=true; $("#layersBtn").setAttribute("aria-expanded","false"); }});
+function setLightButtons(v){ document.querySelectorAll("#light button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===v)); }
+$("#light").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b||!map) return; setLightButtons(b.dataset.v); try{ map.setConfigProperty("basemap","lightPreset",b.dataset.v);}catch(err){} });
+function flip(btn){ const on=btn.getAttribute("aria-pressed")!=="true"; btn.setAttribute("aria-pressed",on); return on; }
+$("#buzzT").addEventListener("click",()=>{ const on=flip($("#buzzT")); if(!map?.getLayer("buzz-heat")) return;
+  map.setLayoutProperty("buzz-heat","visibility",on?"visible":"none"); if(on) map.easeTo({zoom:Math.min(map.getZoom(),11.8),pitch:45,duration:reduceMotion?0:1200}); });
+$("#threeD").addEventListener("click",()=>{ const on=flip($("#threeD")); try{ map?.setConfigProperty("basemap","show3dObjects",on);}catch(e){} });
+$("#spinT").addEventListener("click",()=>{ flip($("#spinT"))?startSpin():stopSpin(); });
+function startSpin(){ if(reduceMotion||!map) return; spinning=true; (function orbit(){ if(!spinning) return; map.easeTo({bearing:map.getBearing()+12,duration:2000,easing:t=>t}); map.once("moveend",()=>spinning&&orbit()); })(); }
+function stopSpin(){ if(!spinning) return; spinning=false; $("#spinT").setAttribute("aria-pressed","false"); }
+
+/* ================= location ================= */
+function locate(){
+  return new Promise(res=>{
+    if(!navigator.geolocation) return res(null);
+    const t=setTimeout(()=>res(null),7000);
+    navigator.geolocation.getCurrentPosition(p=>{clearTimeout(t);res([p.coords.longitude,p.coords.latitude]);},()=>{clearTimeout(t);res(null);},{timeout:6000,maximumAge:600000});
+  });
+}
+function track(){
+  if(!navigator.geolocation||watchId!==null) return;
+  watchId=navigator.geolocation.watchPosition(p=>{ const first=!userLoc; userLoc=[p.coords.longitude,p.coords.latitude]; renderMe(); if(first) renderCards(); },()=>{},{enableHighAccuracy:true,maximumAge:30000});
+}
+$("#nearBtn").addEventListener("click",async()=>{ if(!map) return;
+  const loc=await locate(); if(loc){ userLoc=loc; toast(""); track(); }
+  else toast(`Your browser blocked location. Allow it for this page in the address bar, then tap again. <button onclick="toast('')">OK</button>`);
+  renderMe(); renderCards(); swoop(); });
+</script>
+</body>
+</html>
