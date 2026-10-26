@@ -54,6 +54,8 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [userLoc, setUserLoc] = useState<LngLat | null>(null);
+  // Where the list is sorted from. Only changes on first fix or "Fly to my location", so cards don't jump while you walk.
+  const [sortLoc, setSortLoc] = useState<LngLat | null>(null);
   const [located, setLocated] = useState(false);
   const [sheetMin, setSheetMin] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -67,13 +69,11 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
   const visited = useMemo(() => new Set(visitedIds), [visitedIds]);
   const origin = useCallback((): LngLat => userLoc ?? DEFAULT_CENTER, [userLoc]);
 
+  const filtered = useMemo(() => places.filter((p) => filter === "all" || p.cuisine === filter), [places, filter]);
   const visible = useMemo(() => {
-    const o = userLoc ?? DEFAULT_CENTER;
-    return places
-      .filter((p) => filter === "all" || p.cuisine === filter)
-      .map((p) => ({ ...p, d: km(o, [p.lon, p.lat]) }))
-      .sort((a, b) => a.d - b.d);
-  }, [places, filter, userLoc]);
+    const o = sortLoc ?? DEFAULT_CENTER;
+    return filtered.map((p) => ({ ...p, d: km(o, [p.lon, p.lat]) })).sort((a, b) => a.d - b.d);
+  }, [filtered, sortLoc]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: places.length };
@@ -173,6 +173,7 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
         introSpin = false;
         if (cancelled) return;
         setUserLoc(loc);
+        setSortLoc(loc);
         setLocated(true);
         if (!loc && mode === "explore") setToast("Location is off, so distances are from Santa Clara.");
         setReady(true);
@@ -203,15 +204,15 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
     const map = mapRef.current;
     if (!ready || !map) return;
     (map.getSource("places") as GeoJSONSource | undefined)?.setData(
-      fc(visible.map((p) => ({ type: "Feature", properties: { id: p.id, cuisine: p.cuisine }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } }))),
+      fc(filtered.map((p) => ({ type: "Feature", properties: { id: p.id, cuisine: p.cuisine }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } }))),
     );
-    const maxRecent = Math.max(1, ...visible.map((p) => p.recentCount));
+    const maxRecent = Math.max(1, ...filtered.map((p) => p.recentCount));
     (map.getSource("buzz") as GeoJSONSource | undefined)?.setData(
-      fc(visible.map((p) => ({ type: "Feature", properties: { w: 0.15 + 0.85 * (p.recentCount / maxRecent) }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } }))),
+      fc(filtered.map((p) => ({ type: "Feature", properties: { w: 0.15 + 0.85 * (p.recentCount / maxRecent) }, geometry: { type: "Point", coordinates: [p.lon, p.lat] } }))),
     );
     markers.current.forEach((m) => m.remove());
     markers.current.clear();
-  }, [ready, visible]);
+  }, [ready, filtered]);
 
   // ---------- "you are here" + link line ----------
   useEffect(() => {
@@ -388,7 +389,7 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
 
   async function nearMe() {
     const loc = await locate();
-    if (loc) { setUserLoc(loc); setToast(""); }
+    if (loc) { setUserLoc(loc); setSortLoc(loc); setToast(""); }
     else setToast("Your browser blocked location. Allow it for this site in the address bar, then tap again.");
     swoop(loc ?? DEFAULT_CENTER);
   }
@@ -397,7 +398,7 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
     setFilter(k);
     setSelectedId(null);
     cardsEl.current?.scrollTo({ left: 0, top: 0 });
-    const first = places.filter((p) => k === "all" || p.cuisine === k).map((p) => ({ p, d: km(origin(), [p.lon, p.lat]) })).sort((a, b) => a.d - b.d)[0];
+    const first = places.filter((p) => k === "all" || p.cuisine === k).map((p) => ({ p, d: km(sortLoc ?? DEFAULT_CENTER, [p.lon, p.lat]) })).sort((a, b) => a.d - b.d)[0];
     if (first) setTimeout(() => select(first.p.id, { fly: true }), 50);
   }
 

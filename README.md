@@ -1,9 +1,8 @@
 # bhukkad.
 
-Bay Area Indian food finder on an animated map. Beta.
+Bay Area Indian food finder on an animated map.
 
-Live: https://shubhamtalbar96.github.io/bhukkad_beta/
+- **Live beta:** https://bhukkad.io, served from `index.html` at the repo root (GitHub Pages)
+- **v2 app:** `web/` (Next.js + TypeScript) with its database in `supabase/` (Supabase Postgres). Accounts, ratings, check-ins, dish votes and a personal food map.
 
-- Map: Mapbox GL JS, Standard style with a playful palette and time-of-day lighting
-- Places: Mapbox Search Box (category + dish searches), South Bay only for now
-- Scores, dishes and buzz are sample values until the ratings engine is live
+Setup for v2: [docs/SETUP.md](docs/SETUP.md)
