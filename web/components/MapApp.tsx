@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Map as MapboxMap, Marker as MapboxMarker, GeoJSONSource } from "mapbox-gl";
+import type { Feature, FeatureCollection, Point } from "geojson";
 import { CATEGORIES, CUISINES, type Filter } from "@/lib/categories";
 import type { MapPlace } from "@/lib/places";
 import { env } from "@/lib/env";
@@ -20,7 +21,7 @@ const BASEMAP: Record<string, string | boolean> = {
 };
 
 const lightForHour = (h: number): Light => (h < 6 || h >= 20 ? "night" : h < 8 ? "dawn" : h >= 17 ? "dusk" : "day");
-const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features });
+const fc = (features: Feature[]): FeatureCollection => ({ type: "FeatureCollection", features });
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
 function km(a: LngLat, b: LngLat) {
@@ -307,7 +308,7 @@ export default function MapApp({ places, mode = "explore", visitedIds = [], sign
       const keep = new Set<string>();
       for (const f of map.querySourceFeatures("places")) {
         const pr = (f.properties ?? {}) as Record<string, number & string>;
-        const coords = (f.geometry as GeoJSON.Point).coordinates as LngLat;
+        const coords = (f.geometry as Point).coordinates as LngLat;
         const key = pr.cluster ? `c${pr.cluster_id}` : String(pr.id);
         if (keep.has(key)) continue;
         keep.add(key);
