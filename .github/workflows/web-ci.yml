@@ -1,0 +1,63 @@
+name: Web app checks
+on:
+  push:
+    branches-ignore: [main]
+    paths: ["web/**", "supabase/**", ".github/workflows/web-ci.yml"]
+  pull_request:
+    paths: ["web/**", "supabase/**", ".github/workflows/web-ci.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+          NEXT_PUBLIC_MAPBOX_TOKEN: pk.ci-placeholder
+          NEXT_TELEMETRY_DISABLED: "1"
+      - name: Upload lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: web/package-lock.json
+
+  database:
+    name: Migrations and permission tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Supabase stand-ins
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/ci_stubs.sql
+      - name: Apply migrations (pg_cron schedule skipped, it isn't in plain Postgres)
+        run: |
+          for f in supabase/migrations/*.sql; do
+            echo "Applying $f"
+            sed '/create extension if not exists pg_cron/,$d' "$f" | psql -v ON_ERROR_STOP=1 -q
+          done
+      - name: Permission and scoring smoke test
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/smoke.sql

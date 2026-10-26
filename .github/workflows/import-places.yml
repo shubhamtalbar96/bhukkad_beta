@@ -1,0 +1,28 @@
+name: Import places
+# Run by hand from the Actions tab. Needs these repository secrets:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, MAPBOX_SEARCH_TOKEN
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only print what would be imported"
+        type: boolean
+        default: true
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx tsx scripts/import-places.ts ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MAPBOX_SEARCH_TOKEN: ${{ secrets.MAPBOX_SEARCH_TOKEN }}
